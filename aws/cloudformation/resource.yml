@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: 2010-09-09
+Resources:
+  # 参照のみ可能なS3バケット
+  SampleS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: sample-s3-bucket
+      AccessControl: PublicRead
+    DeletionPolicy: Retain
+  # 参照のみ可能なS3バケットポリシー
+  SampleS3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: SampleS3BucketPolicy
+        Version: 202105160925
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: 'arn:aws:s3:::sample-s3-bucket/*'
+      Bucket: !Ref SampleS3Bucket

@@ -1,0 +1,2 @@
+echo -e "${AWS_ACCESS_KEY_ID}\n${AWS_SECRET_ACCESS_KEY}\n${AWS_REGION}\n${AWS_CONFIG_OUTPUT_FORMAT}\n" | \
+  aws configure --profile ${AWS_CONFIG_PROFILE}

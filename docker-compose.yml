@@ -1,0 +1,110 @@
+#
+# LocakStackを利用したAWS互換の環境構築です。
+#
+# - 拡張（YAMLの継承用の設定）
+#   - x-cli     : docker-compose up で起動しないサービスで継承される設定（CLIツールなど）
+#   - x-aws     : AWS CLI用の基本設定
+#   - x-aws-cli : AWS CLI & docker-compose up で起動しない
+# - Services
+#   - localstack    : LocalStackサービス
+#   - aws-configure : AWS CLIの初期設定
+#   - aws-cli       : (デバッグ用) AWS CLIツール
+#   - aws-cli-bash  : (デバッグ用) AWS CLIツール入りのBash
+#
+version: "3.8"
+#
+# [拡張] docker-compose up 対象外のサービス（CLIツールなどを想定）
+#
+# e.g.
+#   $ docker-compose up                   # => 起動しない
+#   $ docker-compose run --rm <サービス名> # => 起動する
+#   $ docker-compose up --profile cli     # => 起動するが、この使い方は想定しない
+#
+x-cli: &x-cli
+  profiles:
+    - cli
+#
+# [拡張] AWS CLI
+#
+# - Volumes
+#   - /aws       : スクリプトや設定ファイルを置くための一時ディレクトリ
+#   - /root/.aws : AWS CLIコンテナで使いまわす認証情報
+#
+x-aws: &x-aws
+  image: amazon/aws-cli
+  volumes:
+    - ./aws:/aws:ro
+    - aws-configure:/root/.aws
+  entrypoint: ['aws', '--endpoint', 'http://localstack:4566']
+x-aws-cli: &x-aws-cli
+  << : *x-cli
+  << : *x-aws
+services:
+  #
+  # LocalStackのサービス
+  #
+  # - Environments
+  #   - HOSTNAME_EXTERNAL  : 外部に公開されるホスト名。デフォルトがlocalhostのため他サービスから参照できるようにすること
+  #   - SERVICES           : AWS互換のサービス
+  #   - DEFAULT_REGION     : AWS互換の設定
+  #   - EDGE_PORT          : サービスの公開ポート
+  #   - APIGATEWAY_BACKEND : API Gatewayのリレー先（別のサービスでAPI Gatewayを使う想定）
+  #   - INIT_SCRIPTS_PATH  : 初期化スクリプトの場所。CloudFormationで環境構築するなどの場合に利用する
+  # - Volumes
+  #   - /docker-entrypoint-initaws.d : 初期化スクリプトの場所
+  #
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - HOSTNAME_EXTERNAL=localstack
+      - SERVICES=apigateway,cloudformation,events,kms,ses,s3,sqs
+      - DEFAULT_REGION=ap-northeast-1
+      - EDGE_PORT=4566
+      - APIGATEWAY_BACKEND=
+      - INIT_SCRIPTS_PATH=/docker-entrypoint-initaws.d
+    volumes:
+      - ./aws/cloudformation:/docker-entrypoint-initaws.d
+  #
+  # [DEBUG] AWS CLIの設定
+  #
+  # - Environments
+  #   - AWS_ACCESS_KEY_ID        : LocalStack接続用
+  #   - AWS_SECRET_ACCESS_KEY    : 同上
+  #   - AWS_REGION               : 同上
+  #   - AWS_CONFIG_OUTPUT_FORMAT : AWS CLIの設定ファイルのフォーマット
+  #   - AWS_CONFIG_PROFILE       : AWS CLIの名前付きプロファイル（aws --profile <設定値>）
+  #
+  aws-configure:
+    << : *x-aws
+    environment:
+      - AWS_ACCESS_KEY_ID=DUMMY_ACCESS_KEY
+      - AWS_SECRET_ACCESS_KEY=DUMMY_SECRET_KEY
+      - AWS_REGION=ap-northeast-1
+      - AWS_CONFIG_OUTPUT_FORMAT=
+      - AWS_CONFIG_PROFILE=default
+    entrypoint: ['/bin/sh', '/aws/cli/configure.sh']
+  #
+  # [DEBUG] AWS CLI (Command)
+  #
+  # e.g.
+  #   $ docker-compose run --rm aws-cli cloudformation create-stack    --stack-name sample-cloudformation-stack --template-body file:///aws/cloudformation/resource.yml
+  #   $ docker-compose run --rm aws-cli cloudformation describe-stacks --stack-name sample-cloudformation-stack
+  #   $ docker-compose run --rm aws-cli cloudformation delete-stack    --stack-name sample-cloudformation-stack
+  #
+  aws-cli:
+    << : *x-aws-cli
+  #
+  # [DEBUG] AWS CLI (Bash)
+  # e.g.
+  #   $ docker-compose run --rm aws-cli-bash
+  #   > aws --endpoint http://localstack:4566 s3 ls
+  #   > aws --endpoint http://localstack:4566 s3api get-s3-policy --bucket sample-cloudformation-stack
+  #
+  aws-cli-bash:
+    << : *x-aws-cli
+    entrypoint: /bin/bash
+volumes:
+  aws-configure:
+    driver: local
